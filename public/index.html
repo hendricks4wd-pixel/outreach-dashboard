@@ -36,6 +36,14 @@
   .badge.booked { background: #f59e0b22; color: #fbbf24; border: 1px solid #f59e0b44; }
   .badge.email { background: #8b5cf622; color: #a78bfa; border: 1px solid #8b5cf644; }
   .empty { color: #475569; font-size: 13px; padding: 24px; text-align: center; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 12px; flex-wrap: wrap; }
+  .tab { padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; cursor: pointer; border: 1px solid #2d3748; background: #1a1d2e; color: #94a3b8; transition: all 0.15s; }
+  .tab:hover { border-color: #475569; color: #cbd5e1; }
+  .tab.active { background: #3b82f622; border-color: #3b82f644; color: #60a5fa; }
+  .agent-panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+  .agent-panel { background: #1a1d2e; border: 1px solid #2d3748; border-radius: 10px; overflow: hidden; }
+  .agent-panel-header { padding: 10px 16px; border-bottom: 1px solid #2d3748; font-size: 12px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; display: flex; align-items: center; gap: 8px; }
+  .agent-panel-header .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: #475569; }
   .stat-bar { margin-top: 12px; height: 4px; background: #2d3748; border-radius: 2px; overflow: hidden; }
   .stat-bar-fill { height: 100%; background: linear-gradient(90deg, #3b82f6, #8b5cf6); border-radius: 2px; transition: width 0.5s; }
 </style>
@@ -60,12 +68,78 @@
 
 <div class="section">
   <h2>📋 Recent Activity</h2>
-  <div class="activity-list" id="activity"><div class="empty">No activity yet — campaigns will appear here once running.</div></div>
+  <div class="tabs" id="activity-tabs">
+    <div class="tab active" data-agent="all" onclick="setTab('all',this)">All</div>
+  </div>
+  <!-- All activity view -->
+  <div id="activity-all">
+    <div class="activity-list" id="activity"><div class="empty">No activity yet — campaigns will appear here once running.</div></div>
+  </div>
+  <!-- Per-agent panels (shown when an agent tab is selected) -->
+  <div id="activity-agent" style="display:none">
+    <div class="agent-panels" id="agent-panels"></div>
+  </div>
 </div>
 
 <script>
+let activeTab = 'all';
+let lastData = null;
+
+function setTab(agent, el) {
+  activeTab = agent;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  renderActivity(lastData);
+}
+
+function activityItemHTML(a, showAgent) {
+  return `<div class="activity-item">
+    <span class="badge ${a.type||'invite'}">${(a.type||'invite').toUpperCase()}</span>
+    ${showAgent && a.agent ? `<span style="font-size:11px;color:#64748b;white-space:nowrap">${a.agent}</span>` : ''}
+    <span>${a.message}</span>
+    <span class="time" style="margin-left:auto">${a.time ? new Date(a.time).toLocaleTimeString() : ''}</span>
+  </div>`;
+}
+
+function renderActivity(d) {
+  if (!d) return;
+  const acts = (d.activity||[]).slice(-50).reverse();
+  const agents = (d.agents||[]).map(a => a.name);
+
+  // Rebuild tabs if agents changed
+  const tabsEl = document.getElementById('activity-tabs');
+  const existingTabs = Array.from(tabsEl.querySelectorAll('[data-agent]')).map(t => t.dataset.agent);
+  const expectedTabs = ['all', ...agents];
+  if (JSON.stringify(existingTabs) !== JSON.stringify(expectedTabs)) {
+    tabsEl.innerHTML = ['all', ...agents].map((name, i) => {
+      const label = name === 'all' ? 'All' : name;
+      return `<div class="tab${name===activeTab?' active':''}" data-agent="${name}" onclick="setTab('${name}',this)">${label}</div>`;
+    }).join('');
+  }
+
+  if (activeTab === 'all') {
+    document.getElementById('activity-all').style.display = '';
+    document.getElementById('activity-agent').style.display = 'none';
+    const ac = document.getElementById('activity');
+    if (!acts.length) { ac.innerHTML = '<div class="empty">No activity yet — campaigns will appear here once running.</div>'; return; }
+    ac.innerHTML = acts.slice(0,20).map(a => activityItemHTML(a, true)).join('');
+  } else {
+    document.getElementById('activity-all').style.display = 'none';
+    document.getElementById('activity-agent').style.display = '';
+    // Show only this agent's panel
+    const filtered = acts.filter(a => (a.agent||'') === activeTab);
+    const panelsEl = document.getElementById('agent-panels');
+    if (!filtered.length) {
+      panelsEl.innerHTML = `<div class="activity-list"><div class="empty">No activity for ${activeTab} yet.</div></div>`;
+    } else {
+      panelsEl.innerHTML = `<div class="agent-panel"><div class="agent-panel-header"><span class="dot"></span>${activeTab}</div>${filtered.slice(0,20).map(a => activityItemHTML(a, false)).join('')}</div>`;
+    }
+  }
+}
+
 async function refresh() {
   const d = await fetch('/api/data').then(r=>r.json());
+  lastData = d;
   const s = d.stats || {};
   document.getElementById('s-sourced').textContent = s.sourced || 0;
   document.getElementById('s-contacted').textContent = s.contacted || 0;
@@ -88,15 +162,7 @@ async function refresh() {
       </div>
     </div>`).join('');
 
-  const ac = document.getElementById('activity');
-  const acts = (d.activity||[]).slice(-20).reverse();
-  if (!acts.length) { ac.innerHTML = '<div class="empty">No activity yet — campaigns will appear here once running.</div>'; return; }
-  ac.innerHTML = acts.map(a => `
-    <div class="activity-item">
-      <span class="badge ${a.type||'invite'}">${(a.type||'invite').toUpperCase()}</span>
-      <span>${a.message}</span>
-      <span class="time" style="margin-left:auto">${a.time ? new Date(a.time).toLocaleTimeString() : ''}</span>
-    </div>`).join('');
+  renderActivity(d);
 }
 refresh();
 setInterval(refresh, 10000);
