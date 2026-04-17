@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Outreach Dashboard</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; }
+  header { background: #1a1d2e; border-bottom: 1px solid #2d3748; padding: 16px 24px; display: flex; align-items: center; gap: 12px; }
+  header h1 { font-size: 20px; font-weight: 700; color: #fff; }
+  header span { font-size: 12px; background: #22c55e22; color: #22c55e; padding: 3px 10px; border-radius: 20px; border: 1px solid #22c55e44; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; padding: 24px; }
+  .card { background: #1a1d2e; border: 1px solid #2d3748; border-radius: 12px; padding: 20px; }
+  .card h3 { font-size: 12px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  .card .number { font-size: 36px; font-weight: 700; color: #fff; }
+  .card .sub { font-size: 12px; color: #64748b; margin-top: 4px; }
+  .section { margin: 0 24px 24px; }
+  .section h2 { font-size: 16px; font-weight: 600; margin-bottom: 12px; color: #cbd5e1; }
+  .agents { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+  .agent { background: #1a1d2e; border: 1px solid #2d3748; border-radius: 10px; padding: 16px; display: flex; align-items: center; gap: 12px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .dot.idle { background: #64748b; }
+  .dot.running { background: #22c55e; box-shadow: 0 0 8px #22c55e; animation: pulse 1.5s infinite; }
+  .dot.error { background: #ef4444; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+  .agent-info .name { font-size: 14px; font-weight: 600; }
+  .agent-info .status { font-size: 12px; color: #64748b; margin-top: 2px; }
+  .activity-list { background: #1a1d2e; border: 1px solid #2d3748; border-radius: 10px; overflow: hidden; }
+  .activity-item { padding: 12px 16px; border-bottom: 1px solid #2d3748; display: flex; align-items: center; gap: 12px; font-size: 13px; }
+  .activity-item:last-child { border-bottom: none; }
+  .activity-item .time { color: #64748b; font-size: 11px; white-space: nowrap; }
+  .badge { padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+  .badge.invite { background: #3b82f622; color: #60a5fa; border: 1px solid #3b82f644; }
+  .badge.reply { background: #22c55e22; color: #4ade80; border: 1px solid #22c55e44; }
+  .badge.booked { background: #f59e0b22; color: #fbbf24; border: 1px solid #f59e0b44; }
+  .badge.email { background: #8b5cf622; color: #a78bfa; border: 1px solid #8b5cf644; }
+  .empty { color: #475569; font-size: 13px; padding: 24px; text-align: center; }
+  .stat-bar { margin-top: 12px; height: 4px; background: #2d3748; border-radius: 2px; overflow: hidden; }
+  .stat-bar-fill { height: 100%; background: linear-gradient(90deg, #3b82f6, #8b5cf6); border-radius: 2px; transition: width 0.5s; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🚀 Outreach Dashboard</h1>
+  <span id="live-badge">● LIVE</span>
+</header>
+
+<div class="grid" id="stats">
+  <div class="card"><h3>Leads Sourced</h3><div class="number" id="s-sourced">0</div><div class="sub">Total prospects</div></div>
+  <div class="card"><h3>Contacted</h3><div class="number" id="s-contacted">0</div><div class="sub">Invites + emails sent</div></div>
+  <div class="card"><h3>Replied</h3><div class="number" id="s-replied">0</div><div class="sub" id="reply-rate">0% reply rate</div><div class="stat-bar"><div class="stat-bar-fill" id="reply-bar" style="width:0%"></div></div></div>
+  <div class="card"><h3>Booked</h3><div class="number" id="s-booked">0</div><div class="sub" id="book-rate">0% conversion</div><div class="stat-bar"><div class="stat-bar-fill" id="book-bar" style="width:0%"></div></div></div>
+</div>
+
+<div class="section">
+  <h2>🤖 Agent Status</h2>
+  <div class="agents" id="agents"></div>
+</div>
+
+<div class="section">
+  <h2>📋 Recent Activity</h2>
+  <div class="activity-list" id="activity"><div class="empty">No activity yet — campaigns will appear here once running.</div></div>
+</div>
+
+<script>
+async function refresh() {
+  const d = await fetch('/api/data').then(r=>r.json());
+  const s = d.stats || {};
+  document.getElementById('s-sourced').textContent = s.sourced || 0;
+  document.getElementById('s-contacted').textContent = s.contacted || 0;
+  document.getElementById('s-replied').textContent = s.replied || 0;
+  document.getElementById('s-booked').textContent = s.booked || 0;
+  const rr = s.contacted ? Math.round((s.replied/s.contacted)*100) : 0;
+  const br = s.replied ? Math.round((s.booked/s.replied)*100) : 0;
+  document.getElementById('reply-rate').textContent = rr + '% reply rate';
+  document.getElementById('book-rate').textContent = br + '% conversion';
+  document.getElementById('reply-bar').style.width = rr + '%';
+  document.getElementById('book-bar').style.width = br + '%';
+
+  const ag = document.getElementById('agents');
+  ag.innerHTML = (d.agents||[]).map(a => `
+    <div class="agent">
+      <div class="dot ${a.status}"></div>
+      <div class="agent-info">
+        <div class="name">${a.name}</div>
+        <div class="status">${a.status.charAt(0).toUpperCase()+a.status.slice(1)}${a.lastRun ? ' · ' + new Date(a.lastRun).toLocaleTimeString() : ''}</div>
+      </div>
+    </div>`).join('');
+
+  const ac = document.getElementById('activity');
+  const acts = (d.activity||[]).slice(-20).reverse();
+  if (!acts.length) { ac.innerHTML = '<div class="empty">No activity yet — campaigns will appear here once running.</div>'; return; }
+  ac.innerHTML = acts.map(a => `
+    <div class="activity-item">
+      <span class="badge ${a.type||'invite'}">${(a.type||'invite').toUpperCase()}</span>
+      <span>${a.message}</span>
+      <span class="time" style="margin-left:auto">${a.time ? new Date(a.time).toLocaleTimeString() : ''}</span>
+    </div>`).join('');
+}
+refresh();
+setInterval(refresh, 10000);
+</script>
+</body>
+</html>
